@@ -2,7 +2,7 @@ import requests
 from dotenv import load_dotenv
 import os
 import json
-import smtplib
+from smtplib import SMTP
 
 STOCK = "TSLA"
 COMPANY_NAME = "Tesla Inc"
@@ -10,6 +10,9 @@ NUMBER_OF_DAYS = 2
 
 load_dotenv()
 alpha_api_key = os.getenv("ALPHAVANTAGE_API_KEY")
+GOOG_APP_PW = os.getenv("GOOG_APP_PW")
+GMAIL_SENDER = os.getenv("GMAIL_SENDER")
+GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER")
 
 def get_alphavantage_data():
     av_params = {
@@ -22,13 +25,28 @@ def get_alphavantage_data():
     data = response.json()
     data["Time Series (Daily)"] = dict(list(data["Time Series (Daily)"].items())[:NUMBER_OF_DAYS])
 
-    with open("stock_data_file.json", mode="w") as file:
+    os.makedirs("data",exist_ok = True)
+    with open("data/stock_data_file.json", mode="w") as file:
         json.dump(data,file,indent=2)
 
 def send_email():
-    pass
+    domain = "smtp.gmail.com"
+    port = 587
+    body="Current price is"
+    message = f"From: {GMAIL_SENDER}\nTo: {GMAIL_RECEIVER}\nSubject:{STOCK} Ticker Information\n\n{body}"
+    with SMTP(domain,port=port) as connection:
+        connection.starttls()
+        connection.login(user=GMAIL_SENDER,password=GOOG_APP_PW)
+        connection.sendmail(
+            from_addr=GMAIL_SENDER,
+            to_addrs=GMAIL_RECEIVER,
+            msg=message
+        )
+    
+    print("Successfully sent email")
     
 get_alphavantage_data()
+send_email()
 
 
 ## STEP 1: Use https://www.alphavantage.co
