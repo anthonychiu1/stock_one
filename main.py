@@ -4,6 +4,7 @@ import os
 import json
 from smtplib import SMTP
 from newsapi import NewsApiClient
+import time
 
 STOCK = "TSLA"
 COMPANY_NAME = "Tesla"
@@ -151,6 +152,7 @@ def main():
     print(IS_LOCAL)
     if not IS_LOCAL or not files_exist():
         get_alphavantage_data()
+        time.sleep(15)
         get_alphavantage_gq()
     prior_close, recent_open = read_alphavantage_data()
     current_price = read_alphavantage_gq()
