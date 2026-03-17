@@ -3,9 +3,10 @@ from dotenv import load_dotenv
 import os
 import json
 from smtplib import SMTP
+from newsapi import NewsApiClient
 
 STOCK = "TSLA"
-COMPANY_NAME = "Tesla Inc"
+COMPANY_NAME = "Tesla"
 NUMBER_OF_DAYS = 2
 
 load_dotenv()
@@ -13,6 +14,14 @@ alpha_api_key = os.getenv("ALPHAVANTAGE_API_KEY")
 GOOG_APP_PW = os.getenv("GOOG_APP_PW")
 GMAIL_SENDER = os.getenv("GMAIL_SENDER")
 GMAIL_RECEIVER = os.getenv("GMAIL_RECEIVER")
+NEWS_API = os.getenv("NEWS_API")
+ALPHAVANTAGE_URL = "https://www.alphavantage.co/query"
+DATA_DIR = "data"
+NUMBER_OF_ARTICLES = 3
+
+NEED_NEW = False
+
+os.makedirs(DATA_DIR,exist_ok=True)
 
 def get_alphavantage_data():
     av_params = {
@@ -20,33 +29,136 @@ def get_alphavantage_data():
         "symbol": STOCK,
         "apikey":alpha_api_key
                  }
-    alphavantage_url = "https://www.alphavantage.co/query"
-    response = requests.get(alphavantage_url,params=av_params)
+    response = requests.get(ALPHAVANTAGE_URL,params=av_params)
+
     data = response.json()
+    if "Information" in data:
+        raise Exception("Rate limit hit with API, using cached data")
+    
+    if "Time Series (Daily)" not in data:
+        raise Exception(f"Unexpected API Response {data}")
+    
     data["Time Series (Daily)"] = dict(list(data["Time Series (Daily)"].items())[:NUMBER_OF_DAYS])
 
-    os.makedirs("data",exist_ok = True)
-    with open("data/stock_data_file.json", mode="w") as file:
+    with open(f"{DATA_DIR}/stock_data_file.json", mode="w") as file:
         json.dump(data,file,indent=2)
 
-def send_email():
+def get_alphavantage_gq():
+    av_params = {
+        "function":"GLOBAL_QUOTE",
+        "symbol": STOCK,
+        "apikey":alpha_api_key
+                 }
+    
+    response = requests.get(ALPHAVANTAGE_URL,params=av_params)
+    data = response.json()
+    if "Information" in data:
+        raise Exception("Rate limit hit with API, using cached data")
+    
+    if "Global Quote" not in data:
+        raise Exception(f"Unexpected API Response {data}")
+    
+    with open(f"{DATA_DIR}/stock_gq_file.json", mode="w") as file:
+        json.dump(data,file,indent=2)
+
+def read_alphavantage_data():
+    with open(f"{DATA_DIR}/stock_data_file.json",mode="r") as file:
+        data = json.load(file)
+    time_series = data["Time Series (Daily)"]
+    dates = list(time_series.keys())
+    
+    prior_close = time_series[dates[1]]["4. close"]
+    recent_open = time_series[dates[0]]["1. open"]
+
+    return prior_close, recent_open
+
+def read_alphavantage_gq():
+    with open(f"{DATA_DIR}/stock_gq_file.json",mode="r") as file:
+        data = json.load(file)
+    current_price = (data["Global Quote"]["05. price"])
+    return current_price
+
+def calculate_percentages(current, recent, prior):
+
+    recent = float(recent)
+    prior = float(prior)
+    current = float(current)
+
+    change_close_open = recent-prior
+    close_perc = change_close_open/float(prior)*100
+
+    day_change = current-recent
+    day_perc = day_change/recent *100
+
+    message = (
+        f"Current Price: {current:.2f} \n"
+        f"Most Recent Open: {recent} \n"
+        f"Prior day close: {prior}\n"
+        f"Stock closed at {prior} and opened at {recent} a change of ${change_close_open:.2f} or {close_perc:.2f}%\n"
+        f"Stock is currently at {current:.2f} which represents a day change of ${day_change:.2f} or {day_perc:.2f}%\n\n"
+    ) 
+    
+    return message, day_perc, close_perc
+
+    
+
+    
+
+def send_email(headlines, percentage_message,day_perc, close_perc):
     domain = "smtp.gmail.com"
     port = 587
-    body="Current price is"
-    message = f"From: {GMAIL_SENDER}\nTo: {GMAIL_RECEIVER}\nSubject:{STOCK} Ticker Information\n\n{body}"
+    body = percentage_message
+    for headline in headlines:
+        body += f"Title: {headline[0]}, Description {headline[1]}\n"
+    message = f"From: {GMAIL_SENDER}\nTo: {GMAIL_RECEIVER}\nSubject: {STOCK} Ticker Information, Day:{day_perc:.2f}%, Open/Close {close_perc:.2f}%\n\n{body}"
+
+
     with SMTP(domain,port=port) as connection:
         connection.starttls()
         connection.login(user=GMAIL_SENDER,password=GOOG_APP_PW)
         connection.sendmail(
             from_addr=GMAIL_SENDER,
             to_addrs=GMAIL_RECEIVER,
-            msg=message
+            msg=message.encode("utf-8")
         )
     
     print("Successfully sent email")
-    
-get_alphavantage_data()
-send_email()
+
+def access_news():
+
+    newsapi = NewsApiClient(api_key=NEWS_API)
+    top_headlines = newsapi.get_everything(q=COMPANY_NAME,
+                                              language="en",
+                                              sort_by="publishedAt"
+                                              )
+    articles = (top_headlines["articles"])
+
+    article_result = []
+
+    for article in articles[0:NUMBER_OF_ARTICLES]:
+        art_title = article["title"]
+        art_descr = article["description"]
+        article_result.append((art_title,art_descr))
+    return article_result
+        
+
+
+def main():
+    if NEED_NEW:
+        get_alphavantage_data()
+        get_alphavantage_gq()
+    prior_close, recent_open = read_alphavantage_data()
+    current_price = read_alphavantage_gq()
+
+    percentage_message,day_perc, close_perc = calculate_percentages(current_price,recent_open,prior_close)
+
+    recent_headlines = access_news()
+    send_email(recent_headlines, percentage_message,day_perc,close_perc)
+
+if __name__ == "__main__":
+    main()
+
+
 
 
 ## STEP 1: Use https://www.alphavantage.co
