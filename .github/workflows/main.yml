@@ -1,10 +1,29 @@
-name: CI
+name: Daily Stock Alert
 
-on: [push]
+on:
+  schedule:
+    - cron: '30 13 * * 1-5'  # 9:30 AM ET, weekdays only
+  workflow_dispatch:          # manual trigger from GitHub UI
 
 jobs:
-  build:
+  run-stock-alert:
     runs-on: ubuntu-latest
     steps:
-      - name: Placeholder
-        run: echo "Workflow placeholder"
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run stock alert
+        env:
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+          GOOG_APP_PW: ${{ secrets.GOOG_APP_PW }}
+          GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
+          GMAIL_RECEIVER: ${{ secrets.GMAIL_RECEIVER }}
+          NEWS_API: ${{ secrets.NEWS_API }}
+        run: python main.py

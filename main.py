@@ -19,7 +19,7 @@ ALPHAVANTAGE_URL = "https://www.alphavantage.co/query"
 DATA_DIR = "data"
 NUMBER_OF_ARTICLES = 3
 
-NEED_NEW = False
+IS_LOCAL = os.getenv("IS_LOCAL", "false").lower() == "true"
 
 os.makedirs(DATA_DIR,exist_ok=True)
 
@@ -100,6 +100,10 @@ def calculate_percentages(current, recent, prior):
     
     return message, day_perc, close_perc
 
+def files_exist():
+    return os.path.exists(f"{DATA_DIR}/stock_data_file.json") and \
+           os.path.exists(f"{DATA_DIR}/stock_gq_file.json")
+
     
 
     
@@ -144,7 +148,8 @@ def access_news():
 
 
 def main():
-    if NEED_NEW:
+    print(IS_LOCAL)
+    if not IS_LOCAL or not files_exist():
         get_alphavantage_data()
         get_alphavantage_gq()
     prior_close, recent_open = read_alphavantage_data()
